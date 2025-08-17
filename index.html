@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>SWA surfadvisor — Schokkerhaven</title>
+<meta name="description" content="Advies wanneer je kunt windsurfen in Schokkerhaven, op basis van gemiddelde uit meerdere modellen met automatische fallback." />
+<style>
+  :root{
+    --swa-red:#e53935; --swa-black:#111; --swa-white:#fff; --swa-grey:#eef2f7;
+    --bg:var(--swa-grey); --card:#fff; --accent:var(--swa-red);
+    --ink:#0f172a; --muted:#64748b;
+    --green-dark:#146c43; --green-light:#2ecc71; --orange:#ff8f00; --red:#e53935;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink)}
+  header{position:sticky;top:0;z-index:10;background:#fff8;backdrop-filter:saturate(1.2) blur(10px);border-bottom:1px solid #e2e8f0}
+  .bar{max-width:1050px;margin:auto;display:flex;align-items:center;gap:14px;padding:10px 14px}
+  .brand{display:flex;align-items:center;gap:10px}
+  .brand img{height:44px;width:auto;border-radius:8px}
+  .brand h1{font-size:18px;margin:0; letter-spacing:.3px}
+  .spacer{flex:1}
+  .btn{appearance:none;border:1px solid #d1d5db;background:#fff;padding:8px 12px;border-radius:12px;cursor:pointer;font-weight:600}
+  .btn:hover{border-color:#9ca3af}
+  .btn.primary{background:var(--accent);color:#fff;border:none}
+  main{max-width:1050px;margin:18px auto;padding:0 14px 40px}
+  .notice{background:#e8fff7;border:1px solid #b2f5ea;padding:12px 14px;border-radius:14px;margin:14px 0;color:#066b5c}
+  .error{background:#fff1f2;border:1px solid #fecdd3;color:#b91c1c}
+  .grid{display:grid;grid-template-columns:repeat(7,minmax(180px,1fr));gap:12px}
+  @media (max-width:1100px){ .grid{grid-template-columns:repeat(3,1fr)} }
+  @media (max-width:700px){ .grid{grid-template-columns:1fr 1fr} }
+  @media (max-width:520px){ .grid{grid-template-columns:1fr} }
+  .card{background:var(--card);border:1px solid #e2e8f0;border-radius:18px;padding:14px;display:flex;flex-direction:column;gap:8px;box-shadow:0 6px 24px -18px rgba(0,0,0,.2)}
+  .card.ok{background:#f0fdf4;border-color:#86efac}
+  .dayline{display:flex;align-items:center;gap:10px}
+  .dirdot{width:12px;height:12px;border-radius:50%}
+  .title{font-weight:800;font-size:15px}
+  .big{font-size:26px;font-weight:900;letter-spacing:.3px}
+  .row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:#111827}
+  .sub{color:var(--muted);font-size:13px}
+  .tag{font-size:12px;font-weight:700;padding:4px 8px;border-radius:999px;background:#eef2ff;border:1px solid #c7d2fe}
+  .tag.go{background:#dcfce7;border-color:#86efac;color:#065f46}
+  .tag.light{background:#fff7ed;border-color:#fed7aa;color:#9a3412}
+  .models{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+  .tiny{font-size:12px;color:#475569}
+  footer{max-width:1050px;margin:16px auto;padding:0 14px;color:#475569}
+  details.panel{margin-top:12px;background:#fff;border:1px dashed #cbd5e1;border-radius:14px;padding:10px}
+  summary{cursor:pointer;font-weight:700}
+  .scorebar{height:8px;background:#f1f5f9;border-radius:999px;overflow:hidden}
+  .scorebar > b{display:block;height:100%}
+  .weekbar{display:flex;gap:10px;overflow-x:auto;padding:6px 2px;margin:8px 0}
+  .weekpill{min-width:160px;background:var(--card);border:1px solid #e2e8f0;border-radius:14px;padding:10px;display:flex;flex-direction:column;gap:6px;box-shadow:0 6px 14px -12px rgba(0,0,0,.25)}
+  .weekpill.ok{border-color:#86efac;background:#f0fdf4}
+  .weekpill .top{display:flex;align-items:center;gap:8px;font-weight:800}
+  .weekpill .mid{font-size:18px;font-weight:900}
+  .ctrls{display:flex;gap:16px;flex-wrap:wrap;margin:10px 0;padding:10px;background:#fff;border:1px solid #e2e8f0;border-radius:14px}
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <div class="brand">
+      <img src="logo.png" alt="SWA logo" onerror="this.style.display='none'">
+      <h1>SWA surfadvisor • Schokkerhaven</h1>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn primary" id="refreshBtn">Update</button>
+  </div>
+</header>
+
+<main>
+  <div class="ctrls">
+    <label> Drempel 
+      <input type="range" id="thr" min="10" max="30" step="1" value="15" oninput="thrOut.textContent=this.value">
+      <b id="thrOut">15</b> kn
+    </label>
+    <label> Tijdsvenster 
+      <input type="number" id="startH" min="0" max="23" value="8">–
+      <input type="number" id="endH" min="0" max="23" value="17"> uur
+      <button class="btn" id="applyCtrl">Toepassen</button>
+    </label>
+  </div>
+
+  <div id="todayAdvice" class="notice">Data laden…</div>
+  <div id="weekbar" class="weekbar" aria-label="Weekoverzicht (snel)"></div>
+  <div class="grid" id="days"></div>
+
+  <details class="panel">
+    <summary>Uitleg & modelkeuze</summary>
+    <div class="tiny" style="margin-top:8px;line-height:1.5">
+      • **Werkwijze (automatisch):** eerst wordt live geprobeerd via <b>Open‑Meteo</b> (GFS, DWD ICON, ECMWF IFS, Météo‑France AROME/ARPEGE, KNMI Harmonie eerste ~60u). Lukt dat niet, dan leest de site <b>fallback.json</b>. Als dat ook ontbreekt, tonen we demo‑data.<br/>
+      • Alles in <b>knopen</b>. Advies vanaf <b>15 kn</b> (≥ 6,5). Betrouwbaarheid = lage spreiding tussen modellen.<br/>
+      • Vlargerigheidsscore 1–10 (10 = stabiele wind). Richtingskleuren: N=rood, NO/NW=oranje, Z(+ZO/ZW)=lichtgroen, O/W=donkergroen.<br/>
+      <b>Gebruikte bron(nen) deze sessie:</b> <span id="usedSources">laden…</span><br/>
+      <b>Gebruikte modellen:</b> <span id="usedModels">laden…</span>
+    </div>
+  </details>
+
+  <details class="panel">
+    <summary>Diagnose</summary>
+    <div class="tiny" id="diagOut">Nog niet uitgevoerd.</div>
+  </details>
+</main>
+
+<footer>
+  <div class="tiny">Laatste update: <span id="upd"></span>.</div>
+</footer>
+
+<script>
+const LAT = 52.623, LON = 5.783; // Schokkerhaven
+const TZ  = "Europe/Amsterdam";
+const FORECAST_DAYS = 7;
+const INCLUDE_KNMI  = true;
+const KNMI_ONLY_HOURS = 60;
+const TIMEOUT_MS = 12000;
+
+const STATE = { threshold:15, windowStart:8, windowEnd:17, mergedAll:null, models:new Set(), sources:new Set() };
+
+const LIVE_MODELS = [
+  { key:"gfs",  name:"NOAA GFS",        url:"https://api.open-meteo.com/v1/gfs" },
+  { key:"icon", name:"DWD ICON",        url:"https://api.open-meteo.com/v1/dwd-icon" },
+  { key:"ecmwf",name:"ECMWF IFS",       url:"https://api.open-meteo.com/v1/ecmwf" },
+  { key:"mf",   name:"Météo-France",    url:"https://api.open-meteo.com/v1/meteofrance" }
+];
+
+function dirToWord(d){
+  const names = ["N","NO","O","ZO","Z","ZW","W","NW"];
+  const idx = Math.round(d/45)%8;
+  return names[idx];
+}
+function colorForDir(d){
+  const w = dirToWord(d);
+  if(w==="N") return "var(--red)";
+  if(w==="NO"||w==="NW") return "var(--orange)";
+  if(w==="Z"||w==="ZO"||w==="ZW") return "var(--green-light)";
+  if(w==="O"||w==="W") return "var(--green-dark)";
+  return (d>135&&d<225) ? "var(--green-light)" : "var(--green-dark)";
+}
+function gustinessScore(gdiff){ const s = Math.max(1, Math.min(10, 10 - (gdiff/1.8))); return Math.round(s*10)/10; }
+function reliabilityPct(stdev){ const p = Math.max(0, 100 - (stdev*20)); return Math.round(p); }
+function gradeForDay(spdAvg, gdiff, stdev){
+  let g = 6.5 + Math.max(0, spdAvg - 15)*0.2;
+  g -= (gdiff / 10); g -= (stdev / 5);
+  g = Math.max(1, Math.min(10, g));
+  return Math.round(g*10)/10;
+}
+function groupByDate(rows){
+  const map = new Map();
+  for(const r of rows){
+    const k = new Date(r.t).toISOString().slice(0,10);
+    if(!map.has(k)) map.set(k, []);
+    map.get(k).push(r);
+  }
+  return map;
+}
+function niceDateLabel(iso){
+  const d = new Date(iso+"T12:00:00");
+  const opt = { weekday:"short", day:"2-digit", month:"2-digit" };
+  return d.toLocaleDateString("nl-NL", opt);
+}
+function hhmm(d){
+  return new Date(d).toLocaleTimeString("nl-NL",{hour:"2-digit",minute:"2-digit"});
+}
+
+function withTimeout(promise, ms){
+  return Promise.race([ promise, new Promise((_,rej)=>setTimeout(()=>rej(new Error("Timeout "+ms+"ms")), ms)) ]);
+}
+
+async function fetchModel(m){
+  const p = new URL(m.url);
+  p.searchParams.set("latitude", LAT);
+  p.searchParams.set("longitude", LON);
+  p.searchParams.set("hourly", "wind_speed_10m,wind_gusts_10m,wind_direction_10m");
+  p.searchParams.set("wind_speed_unit","kn");
+  p.searchParams.set("timezone", TZ);
+  p.searchParams.set("forecast_days", FORECAST_DAYS);
+  p.searchParams.set("_", Date.now());
+  const r = await withTimeout(fetch(p, {cache:"no-store"}), TIMEOUT_MS);
+  if(!r.ok) throw new Error(m.name+" "+r.status);
+  const j = await r.json();
+  return normalizeLive(j, m.name);
+}
+async function fetchKNMI(){
+  const url = new URL("https://api.open-meteo.com/v1/forecast");
+  url.searchParams.set("latitude", LAT);
+  url.searchParams.set("longitude", LON);
+  url.searchParams.set("hourly","wind_speed_10m,wind_gusts_10m,wind_direction_10m");
+  url.searchParams.set("wind_speed_unit","kn");
+  url.searchParams.set("timezone", TZ);
+  url.searchParams.set("models","knmi_seamless");
+  url.searchParams.set("forecast_days", Math.min(FORECAST_DAYS,4));
+  url.searchParams.set("_", Date.now());
+  const r = await withTimeout(fetch(url, {cache:"no-store"}), TIMEOUT_MS);
+  if(!r.ok) throw new Error("KNMI "+r.status);
+  const j = await r.json();
+  return normalizeLive(j, "KNMI Harmonie (NL)");
+}
+function normalizeLive(j, modelName){
+  const t = j.hourly?.time || [];
+  const spd = j.hourly?.wind_speed_10m || [];
+  const gst = j.hourly?.wind_gusts_10m || [];
+  const dir = j.hourly?.wind_direction_10m || [];
+  const out = [];
+  for(let i=0;i<t.length;i++){
+    out.push({ t: t[i], spd: spd[i], gst: (i<gst.length?gst[i]:spd[i]), dir: (i<dir.length?dir[i]:0), model:modelName });
+  }
+  return out;
+}
+
+async function loadLiveOrFallback(){
+  // 1) try live
+  const models = [...LIVE_MODELS];
+  if(INCLUDE_KNMI) models.push({key:"knmi",name:"KNMI Harmonie (NL)",url:"__knmi__"});
+  const jobs = models.map(m => m.url==="__knmi__" ? fetchKNMI() : fetchModel(m));
+  let results = await Promise.allSettled(jobs);
+  let ok = results.filter(r=>r.status==="fulfilled").map(r=>r.value).flat();
+  const now = new Date();
+  if(INCLUDE_KNMI){
+    ok = ok.filter(r => r.model!=="KNMI Harmonie (NL)" || ((new Date(r.t) - now)/3600000 <= KNMI_ONLY_HOURS));
+  }
+  if(ok.length>0){
+    STATE.sources.add("Live (Open‑Meteo)");
+    // per-uur mergen
+    const perTime = new Map();
+    ok.forEach(r=>{
+      const key = new Date(r.t).toISOString();
+      if(!perTime.has(key)) perTime.set(key, []);
+      perTime.get(key).push(r);
+      STATE.models.add(r.model);
+    });
+    const merged = [];
+    for(const [key, arr] of [...perTime.entries()].sort()){
+      const speeds = arr.map(a=>a.spd).filter(Number.isFinite);
+      const gusts  = arr.map(a=>a.gst).filter(Number.isFinite);
+      const dirs   = arr.map(a=>a.dir).filter(Number.isFinite);
+      if(!speeds.length) continue;
+      const spdAvg = speeds.reduce((a,b)=>a+b,0)/speeds.length;
+      const gstAvg = gusts.length? gusts.reduce((a,b)=>a+b,0)/gusts.length : spdAvg;
+      const dirAvg = dirs.length? (function(degs){let x=0,y=0;for(const d of degs){const r=d*Math.PI/180;x+=Math.cos(r);y+=Math.sin(r);}let ang=Math.atan2(y,x)*180/Math.PI; if(ang<0) ang+=360;return ang;})(dirs) : 0;
+      const stdev  = (function(nums){if(nums.length<=1) return 0; const avg=nums.reduce((a,b)=>a+b,0)/nums.length; const v=nums.reduce((s,n)=>s+(n-avg)**2,0)/(nums.length-1); return Math.sqrt(v);})(speeds);
+      merged.push({ t:key, spdAvg, gstAvg, dirAvg, stdev });
+    }
+    STATE.mergedAll = merged;
+    renderAccordingToControls();
+    updateSourcesAndModels();
+    return;
+  }
+
+  // 2) fallback.json
+  try{
+    const r = await fetch("./fallback.json?_=" + Date.now(), {cache:"no-store"});
+    if(r.ok){
+      const j = await r.json();
+      const data = (j.data && Array.isArray(j.data)) ? j.data : j;
+      (j.__models||[]).forEach(m=>STATE.models.add(m));
+      STATE.sources.add("fallback.json");
+      STATE.mergedAll = data.map(o=>({ t:o.t, spdAvg:o.spdAvg, gstAvg:o.gstAvg, dirAvg:o.dirAvg, stdev:o.stdev||1.0 }));
+      renderAccordingToControls();
+      updateSourcesAndModels();
+      return;
+    }
+  }catch(e){ /* ignore */ }
+
+  // 3) demo
+  STATE.sources.add("Demo-data");
+  STATE.mergedAll = makeMock();
+  renderAccordingToControls();
+  updateSourcesAndModels();
+}
+
+function updateSourcesAndModels(){
+  const usedSrc = document.getElementById("usedSources");
+  const usedMod = document.getElementById("usedModels");
+  if(usedSrc) usedSrc.textContent = Array.from(STATE.sources).join(", ");
+  if(usedMod) usedMod.textContent = Array.from(STATE.models).join(", ") || "onbekend";
+  document.getElementById("upd").textContent = new Date().toLocaleString("nl-NL");
+}
+
+function makeMock(){
+  const out = [];
+  const now = new Date();
+  for(let d=0; d<7; d++){
+    for(let h=8; h<=17; h++){
+      const t = new Date(now.getFullYear(), now.getMonth(), now.getDate()+d, h, 0, 0);
+      const base = 12 + 8*Math.sin((h-8)/9*Math.PI) + (Math.random()*2-1);
+      const gust = base + 4 + Math.random()*3;
+      const dir  = (225 + d*15 + h*5) % 360;
+      out.push({t:t.toISOString(), spdAvg: base, gstAvg: gust, dirAvg: dir, stdev: 1.2});
+    }
+  }
+  return out;
+}
+
+function renderAccordingToControls(){
+  if(!STATE.mergedAll){ return; }
+  const grouped = groupByDate(STATE.mergedAll);
+  const cards = [];
+  for(const [date, arrAll] of grouped){
+    const arr = arrAll.filter(x => { const h = new Date(x.t).getHours(); return h >= STATE.windowStart && h <= STATE.windowEnd; });
+    if(arr.length===0) continue;
+    arr.sort((a,b)=>{
+      if(b.spdAvg !== a.spdAvg) return b.spdAvg - a.spdAvg;
+      const gdA = a.gstAvg - a.spdAvg, gdB = b.gstAvg - b.spdAvg;
+      if(gdA !== gdB) return gdA - gdB;
+      return a.stdev - b.stdev;
+    });
+    const best = arr[0];
+    const gdiff = Math.max(0, best.gstAvg - best.spdAvg);
+    const gustScore = gustinessScore(gdiff);
+    const rel = reliabilityPct(best.stdev);
+    const grade = gradeForDay(best.spdAvg, gdiff, best.stdev);
+    cards.push({ date, best, gustScore, rel, grade });
+  }
+  renderCards(cards);
+}
+
+function renderCards(cards){
+  const today = new Date().toISOString().slice(0,10);
+  cards.sort((a,b)=>a.date.localeCompare(b.date));
+  const next7 = cards.slice(0,7);
+
+  const todayCard = next7.find(c => c.date===today) || next7[0];
+  if(todayCard){
+    const b = todayCard.best;
+    const col = colorForDir(b.dirAvg ?? 0);
+    const word = dirToWord(b.dirAvg ?? 0);
+    const go = b.spdAvg >= STATE.threshold;
+    const advice = `
+      <b>Advies voor vandaag (${niceDateLabel(todayCard.date)}):</b><br>
+      Beste tijdstip <b>${hhmm(b.t)}</b> • Wind <b>${b.spdAvg.toFixed(1)} kn</b> • <b>${word}</b> (vlagen ${b.gstAvg.toFixed(1)} kn)
+      <div class="row" style="margin-top:6px">
+        <span class="tag ${go?'go':'light'}">${go?'GA SURFEN ✅':'TE LICHT ⛔'}</span>
+        <span class="tag">Betrouwbaarheid: ${todayCard.rel}%</span>
+        <span class="tag">Vlagerigheid: ${todayCard.gustScore}/10</span>
+      </div>
+    `;
+    const div = document.getElementById("todayAdvice");
+    div.innerHTML = advice;
+    div.className = "notice " + (go ? "go" : "");
+    div.style.borderLeft = `10px solid ${col}`;
+  }
+
+  const weekbar = document.getElementById("weekbar"); weekbar.innerHTML="";
+  const grid = document.getElementById("days"); grid.innerHTML="";
+  next7.forEach(c=>{
+    const b = c.best;
+    const word = dirToWord(b.dirAvg ?? 0);
+    const col = colorForDir(b.dirAvg ?? 0);
+    const go = b.spdAvg >= STATE.threshold;
+    const relw = Math.max(4, Math.min(100, c.rel));
+
+    const pill = document.createElement("div");
+    pill.className = "weekpill" + (go ? " ok" : "");
+    pill.innerHTML = `
+      <div class="top"><span class="dirdot" style="background:${col}"></span>${niceDateLabel(c.date)}</div>
+      <div class="mid">${b.spdAvg.toFixed(1)} kn • <b>${word}</b></div>
+      <div class="tiny"><b>${hhmm(b.t)}</b></div>
+      <span class="tag ${go?'go':'light'}">${go?'GA SURFEN':'TE LICHT'}</span>
+    `;
+    weekbar.appendChild(pill);
+
+    const card = document.createElement("div");
+    card.className = "card" + (go ? " ok" : "");
+    card.innerHTML = `
+      <div class="dayline">
+        <span class="dirdot" style="background:${col}"></span>
+        <div class="title">${niceDateLabel(c.date)}</div>
+        <div class="spacer"></div>
+        <span class="tag ${go?'go':'light'}">${go?'GA SURFEN':'TE LICHT'}</span>
+      </div>
+
+      <div class="big">${b.spdAvg.toFixed(1)} kn • <b>${word}</b> <span class="sub">(${b.gstAvg.toFixed(1)} vlagen)</span></div>
+      <div class="row"><b>${hhmm(b.t)}</b></div>
+
+      <div class="row sub">Vlagerigheid: <b>${c.gustScore}/10</b></div>
+      <div class="row sub" style="gap:6px;align-items:center">
+        Betrouwbaarheid:
+        <span style="width:100%;max-width:180px" class="scorebar"><b style="width:${relw}% ; background:${col}"></b></span>
+        <b>${c.rel}%</b>
+      </div>
+      `;
+    grid.appendChild(card);
+  });
+}
+
+document.getElementById("refreshBtn").addEventListener("click", ()=>{
+  document.getElementById("todayAdvice").textContent="Updaten…";
+  STATE.models = new Set(); STATE.sources = new Set();
+  loadLiveOrFallback().catch(err=>{
+    document.getElementById("todayAdvice").classList.add("error");
+    document.getElementById("todayAdvice").textContent="Kon data niet laden: "+err.message;
+  });
+});
+document.getElementById('applyCtrl').addEventListener('click', ()=>{
+  const s = parseInt(document.getElementById('startH').value,10);
+  const e = parseInt(document.getElementById('endH').value,10);
+  const t = parseInt(document.getElementById('thr').value,10);
+  if(isFinite(s)&&isFinite(e)&&s>=0&&e<=23&&s<=e){ STATE.windowStart=s; STATE.windowEnd=e; }
+  if(isFinite(t)) STATE.threshold=t;
+  renderAccordingToControls();
+});
+
+// start
+loadLiveOrFallback().catch(err=>{
+  document.getElementById("todayAdvice").classList.add("error");
+  document.getElementById("todayAdvice").textContent="Kon data niet laden: "+err.message;
+});
+</script>
+</body>
+</html>
